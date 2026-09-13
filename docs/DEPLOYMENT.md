@@ -352,6 +352,19 @@ Deployment failed: Command execution failed (exit code 1)
 Railpack a vu un `package.json` (le squelette Laravel en embarque un pour Vite)
 et a tenté un build **Node** au lieu d'un build **PHP**. Résultat : échec.
 
+### 9 ter.1 bis Le seul réglage qui débloque le déploiement
+
+Le port, le domaine et les variables n'ont **aucun** effet tant que le build
+pack n'est pas changé : la construction échoue avant. Cherchez dans
+l'application Coolify :
+
+**Configuration → General → Build Pack → `Dockerfile`**
+
+puis, dans le même écran, **Dockerfile Location = `/Dockerfile`**.
+
+Le journal de déploiement doit alors afficher autre chose que
+`Generating Railpack build plan` — c'est le signe que le réglage a bien pris.
+
 ### 9 ter.2 Backend — réglages Coolify
 
 | Réglage | Valeur |
@@ -393,6 +406,7 @@ REDIS_HOST=<hôte interne fourni par Coolify>
 REDIS_PORT=6379
 
 REQUIRE_MFA_FOR_STAFF=true
+PORT=8000                              # voir l'avertissement ci-dessous
 FUTAYE_BASE_URL=https://futaye.buania.com
 FUTAYE_CLIENT_ID=<code application>
 FUTAYE_TOKEN=<token HMAC — secret>
@@ -406,7 +420,13 @@ MAIL_PASSWORD=...
 MAIL_FROM_ADDRESS=no-reply@tombola-innossb.cd
 ```
 
-Deux points importants :
+**⚠️ Le port d'écoute et le port exposé doivent coïncider.** L'image écoute sur
+la variable `PORT` (8000 par défaut). Si Coolify injecte un `PORT` différent,
+l'application écoutera sur ce port-là alors que le proxy vise le « Ports
+Exposes » configuré — d'où une erreur 502 au premier appel. Définissez donc
+`PORT=8000` explicitement **et** « Ports Exposes = 8000 ».
+
+Trois points importants :
 
 - **Les migrations s'exécutent automatiquement** au démarrage du conteneur
   (`php artisan migrate --force` dans la commande de démarrage).
