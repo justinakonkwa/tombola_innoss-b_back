@@ -1,0 +1,123 @@
+version: '3.9'
+
+# =============================================================================
+# Tombola Innoss'B — API + base de données + files d'attente
+# =============================================================================
+# Pile backend autonome : le frontend est déployé séparément (voir le dépôt
+# `tombola_innoss-b_front`) et pointe vers `APP_URL`.
+#
+#   cp .env.example .env   # renseigner les secrets, puis :
+#   docker compose up -d --build
+#
+# PostgreSQL et Redis ne sont jamais exposés : ils restent sur le réseau interne.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-tombola}
+      POSTGRES_USER: ${DB_USERNAME:-tombola_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD est requis}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USERNAME:-tombola_app} -d ${DB_DATABASE:-tombola}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [tombola]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory', '256mb', '--maxmemory-policy', 'allkeys-lru']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [tombola]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: &api-env
+      APP_ENV: production
+      APP_DEBUG: 'false'
+      APP_URL: ${APP_URL:?APP_URL est requis}
+      APP_KEY: ${APP_KEY:?APP_KEY est requis}
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE:-tombola}
+      DB_USERNAME: ${DB_USERNAME:-tombola_app}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD est requis}
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # MFA obligatoire pour tout le personnel : jamais false en production.
+      REQUIRE_MFA_FOR_STAFF: 'true'
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL est requis}
+      ADMIN_URL: ${ADMIN_URL}
+      FUTAYE_BASE_URL: ${FUTAYE_BASE_URL:-https://futaye.buania.com}
+      FUTAYE_CLIENT_ID: ${FUTAYE_CLIENT_ID:?FUTAYE_CLIENT_ID est requis}
+      FUTAYE_TOKEN: ${FUTAYE_TOKEN:?FUTAYE_TOKEN est requis}
+      FUTAYE_RETURN_URL: ${FUTAYE_RETURN_URL}
+      NOTIFICATION_CHANNELS: ${NOTIFICATION_CHANNELS:-email}
+      MAIL_MAILER: ${MAIL_MAILER:-smtp}
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
+    ports:
+      - '127.0.0.1:${API_PORT:-8000}:8000'
+    networks: [tombola]
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    command: ['php', 'artisan', 'queue:work', '--sleep=3', '--tries=3', '--max-time=3600']
+    environment: *api-env
+    networks: [tombola]
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    # Expire les commandes, réconcilie les paiements en attente, vérifie la
+    # chaîne d'audit (cahier des charges §35, §36).
+    command: ['sh', '-c', 'while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done']
+    environment: *api-env
+    networks: [tombola]
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  tombola:
+    driver: bridge
