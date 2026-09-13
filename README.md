@@ -211,7 +211,7 @@ docker compose -f docker-compose.yml -f docker-compose.debug.yml --profile debug
 ## Tests et vérifications
 
 ```bash
-php artisan test        # 44 tests, 263 assertions
+php artisan test        # 55 tests, 314 assertions
 ```
 
 Les tests couvrent les règles critiques : aucun ticket sans paiement confirmé,
@@ -225,6 +225,7 @@ Scripts de vérification de bout en bout (API démarrée) :
 ./scripts/smoke-test.sh http://localhost:8000   # achat → webhook signé → tickets
 ./scripts/draw-e2e.sh   http://localhost:8000   # tirage complet → vérification publique
 ./scripts/mfa-e2e.sh    http://localhost:8000   # parcours TOTP et RBAC
+./scripts/payment-e2e.sh http://localhost:8000   # paiement complet via la passerelle réelle
 ```
 
 ---

@@ -46,7 +46,11 @@ class PaymentService
      */
     public function initiate(Order $order, array $options = []): Payment
     {
-        return DB::transaction(function () use ($order, $options) {
+        // 1. Courte transaction : valider la commande et réserver la ligne de
+        //    paiement. Aucun appel réseau ici — garder une transaction ouverte
+        //    (avec un verrou FOR UPDATE sur la commande) pendant un appel HTTP
+        //    bloquerait les autres requêtes jusqu'au délai d'attente.
+        [$locked, $payment, $reused] = DB::transaction(function () use ($order, $options) {
             /** @var Order $locked */
             $locked = Order::query()->whereKey($order->getKey())->lockForUpdate()->firstOrFail();
 
@@ -63,7 +67,7 @@ class PaymentService
                 ->first();
 
             if ($existing !== null && $existing->created_at->gt(now()->subMinutes(20))) {
-                return $existing;
+                return [$locked, $existing, true];
             }
 
             $payment = Payment::query()->create([
@@ -78,51 +82,74 @@ class PaymentService
                 'status' => PaymentStatus::Created,
             ]);
 
-            $payload = [
-                'amount' => number_format((float) $locked->total_amount, 2, '.', ''),
-                'currency' => $locked->currency,
-                'description' => sprintf('Tombola Innoss’B — %s (%d ticket(s))', $locked->campaign->name ?? 'Campagne', $locked->quantity),
-                'returnUrl' => $options['return_url'] ?? config('services.futaye.return_url'),
-            ];
+            return [$locked, $payment, false];
+        });
 
-            if (! empty($options['phone'])) {
-                $payload['phone'] = $options['phone'];
-                $payload['channel'] = $options['channel'] ?? PaymentChannel::MobileMoney->value;
-            } elseif (($options['channel'] ?? null) === PaymentChannel::Card->value) {
-                $payload['channel'] = PaymentChannel::Card->value;
-            }
+        if ($reused) {
+            return $payment;
+        }
 
-            $startedAt = microtime(true);
+        $payload = [
+            'amount' => number_format((float) $locked->total_amount, 2, '.', ''),
+            'currency' => $locked->currency,
+            'description' => sprintf('Tombola Innoss’B — %s (%d ticket(s))', $locked->campaign->name ?? 'Campagne', $locked->quantity),
+            'returnUrl' => $options['return_url'] ?? config('services.futaye.return_url'),
+        ];
 
-            try {
-                $response = $this->futaye->createPayment($payload);
-            } catch (PaymentProviderException $e) {
-                $this->recordAttempt($payment, 'create', 'error', null, $payload, null, $e->getMessage(), $startedAt);
-                $payment->forceFill(['status' => PaymentStatus::Failed])->save();
+        // La passerelle attend ses propres valeurs de canal, en majuscules.
+        $providerChannel = $this->providerChannel($options);
 
-                throw $e;
-            }
+        if (! empty($options['phone'])) {
+            $payload['phone'] = $options['phone'];
+            $payload['channel'] = $providerChannel ?? 'MOBILE_MONEY';
+        } elseif ($providerChannel !== null) {
+            $payload['channel'] = $providerChannel;
+        }
 
-            $json = $response['json'] ?? [];
-            $duration = (int) round((microtime(true) - $startedAt) * 1000);
+        // 2. Appel réseau, en dehors de toute transaction.
+        $startedAt = microtime(true);
 
-            $this->recordAttempt(
-                $payment,
-                'create',
-                $response['ok'] ? 'success' : 'failed',
-                $response['status'],
-                $payload,
-                $json,
-                $response['ok'] ? null : mb_substr($response['body'], 0, 500),
-                $duration
+        try {
+            $response = $this->futaye->createPayment($payload);
+        } catch (PaymentProviderException $e) {
+            $this->recordAttempt($payment, 'create', 'error', null, $payload, null, $e->getMessage(), $startedAt);
+            $payment->forceFill(['status' => PaymentStatus::Failed])->save();
+
+            throw $e;
+        }
+
+        $json = $response['json'] ?? [];
+        $duration = (int) round((microtime(true) - $startedAt) * 1000);
+
+        // 3. La tentative est journalisée AVANT toute décision : elle doit rester
+        //    consultable par le support même si la session n'est pas créée.
+        $this->recordAttempt(
+            $payment,
+            'create',
+            $response['ok'] ? 'success' : 'failed',
+            $response['status'],
+            $payload,
+            $json,
+            $response['ok'] ? null : mb_substr($response['body'], 0, 500),
+            $duration
+        );
+
+        if (! $response['ok']) {
+            $payment->forceFill(['status' => PaymentStatus::Failed, 'provider_payload' => $json])->save();
+
+            // Le motif renvoyé par la passerelle est destiné au payeur : on le
+            // remonte plutôt que d'afficher un message générique inexploitable.
+            $detail = is_array($json) ? ($json['detail'] ?? $json['title'] ?? null) : null;
+
+            throw new PaymentProviderException(
+                $detail
+                    ? 'Paiement refusé par la passerelle : '.mb_substr((string) $detail, 0, 200)
+                    : 'La passerelle de paiement a refusé la création de la session.'
             );
+        }
 
-            if (! $response['ok']) {
-                $payment->forceFill(['status' => PaymentStatus::Failed, 'provider_payload' => $json])->save();
-
-                throw new PaymentProviderException('La passerelle de paiement a refusé la création de la session.');
-            }
-
+        // 4. Courte transaction : enregistrer le résultat de la session.
+        DB::transaction(function () use ($payment, $locked, $json) {
             $payment->forceFill([
                 'provider_payment_id' => $this->extractPaymentId($json),
                 'provider_reference' => $json['reference'] ?? null,
@@ -139,9 +166,30 @@ class PaymentService
                 'currency' => $payment->currency,
                 'channel' => $payment->channel->value,
             ]);
-
-            return $payment->refresh();
         });
+
+        return $payment->refresh();
+    }
+
+    /**
+     * Valeur de canal attendue par la passerelle (majuscules, cf. sa documentation).
+     *
+     * @param  array<string, mixed>  $options
+     */
+    private function providerChannel(array $options): ?string
+    {
+        $channel = $options['channel'] ?? null;
+
+        if ($channel instanceof PaymentChannel) {
+            $channel = $channel->value;
+        }
+
+        return match ($channel) {
+            'card' => 'CARD',
+            'mobile_money', 'mobile-money' => 'MOBILE_MONEY',
+            'rdv' => 'RDV',
+            default => null,
+        };
     }
 
     /**

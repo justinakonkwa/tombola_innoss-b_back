@@ -45,9 +45,25 @@ class Order extends Model
         return $this->hasMany(Payment::class);
     }
 
+    /**
+     * Paiement le plus récent de la commande.
+     *
+     * On n'utilise PAS `latestOfMany()` : cette méthode s'appuie sur un agrégat
+     * `MAX(id)`, or les clés primaires sont des UUID et PostgreSQL ne fournit
+     * pas de fonction `max(uuid)`. La requête échouait donc en
+     * « Undefined function: function max(uuid) does not exist », cassant la
+     * page « Mes commandes » et le tunnel de paiement.
+     *
+     * Un `hasOne` ordonné donne le même résultat sans agrégat : lors du
+     * chargement anticipé, Laravel conserve la première ligne rencontrée par
+     * commande, donc la plus récente. L'ordre est rendu déterministe par l'`id`
+     * en second critère (`created_at` n'a qu'une précision à la seconde).
+     */
     public function latestPayment(): HasOne
     {
-        return $this->hasOne(Payment::class)->latestOfMany();
+        return $this->hasOne(Payment::class)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
     }
 
     public function tickets(): HasMany
