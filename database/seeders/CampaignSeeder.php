@@ -19,7 +19,7 @@ class CampaignSeeder extends Seeder
 {
     public function run(): void
     {
-        $adminEmail = (string) env('TOMBOLA_ADMIN_EMAIL', 'admin@tombola-innossb.cd');
+        $adminEmail = (string) config('tombola.admin.email', 'admin@tombola-innossb.cd');
 
         /** @var User|null $admin */
         $admin = User::query()->where('email', $adminEmail)->first();

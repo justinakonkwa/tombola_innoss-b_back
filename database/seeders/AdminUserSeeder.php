@@ -28,7 +28,7 @@ class AdminUserSeeder extends Seeder
 
     public function run(): void
     {
-        $email = (string) env('TOMBOLA_ADMIN_EMAIL', 'admin@tombola-innossb.cd');
+        $email = (string) config('tombola.admin.email', 'admin@tombola-innossb.cd');
         $password = $this->resolvePassword();
 
         if ($password === null) {
@@ -93,7 +93,8 @@ class AdminUserSeeder extends Seeder
      */
     private function resolvePassword(): ?array
     {
-        $configured = trim((string) env('TOMBOLA_ADMIN_PASSWORD', ''));
+        // `config()` et non `env()` : voir la note dans config/tombola.php.
+        $configured = trim((string) config('tombola.admin.password', ''));
 
         if ($configured !== '') {
             if (strlen($configured) < 12) {

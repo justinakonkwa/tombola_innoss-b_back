@@ -83,6 +83,10 @@ La pile démarre PostgreSQL, Redis, l'API, un worker de files et un planificateu
 | `REQUIRE_MFA_FOR_STAFF` | **`true` en production** (obligatoire) |
 | `NOTIFICATION_CHANNELS` | `email`, `sms`, `whatsapp`, `push` |
 
+Le fichier [`​.env.production.example`](.env.production.example) liste **toutes**
+les variables, classées par criticité (obligatoire / recommandé / optionnel),
+avec les pièges à éviter. C'est la référence à recopier dans Coolify.
+
 ### Compte administrateur
 
 Hors environnement local, **aucun mot de passe par défaut n'est utilisé**. Le

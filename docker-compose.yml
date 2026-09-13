@@ -66,6 +66,9 @@ services:
       DB_DATABASE: ${DB_DATABASE:-tombola}
       DB_USERNAME: ${DB_USERNAME:-tombola_app}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD est requis}
+      # CACHE_DRIVER est le nom lu par Laravel 10 ; CACHE_STORE par Laravel 11+.
+      # Les deux sont définis pour rester correct après une montée de version.
+      CACHE_DRIVER: redis
       CACHE_STORE: redis
       QUEUE_CONNECTION: redis
       SESSION_DRIVER: redis

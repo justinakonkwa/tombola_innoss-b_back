@@ -69,6 +69,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Compte administrateur initial
+    |--------------------------------------------------------------------------
+    |
+    | Ces valeurs sont lues par les seeders. Elles passent IMPÉRATIVEMENT par un
+    | fichier de config : une fois `php artisan config:cache` exécuté (ce que
+    | fait la commande de démarrage du conteneur), Laravel ne charge plus le
+    | fichier .env et un appel `env()` hors des fichiers de config renvoie null.
+    | La variable aurait donc été silencieusement ignorée en production.
+    |
+    */
+    'admin' => [
+        'email' => env('TOMBOLA_ADMIN_EMAIL', 'admin@tombola-innossb.cd'),
+        'password' => env('TOMBOLA_ADMIN_PASSWORD', ''),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Paramètres publics par défaut
     |--------------------------------------------------------------------------
     */
