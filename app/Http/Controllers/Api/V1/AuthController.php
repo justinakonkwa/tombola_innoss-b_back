@@ -63,6 +63,11 @@ class AuthController extends Controller
 
         $tokens = $this->auth->issueTokens($user, $request, 'web');
 
+        // Le client doit recevoir ses propres coordonnées. Sans cela, la requête
+        // n'ayant pas encore d'utilisateur authentifié, UserResource le traite
+        // comme un tiers et masque email et téléphone — y compris à l'inscription.
+        $request->setUserResolver(fn () => $user);
+
         return response()->json([
             'data' => [
                 'user' => new UserResource($user->load('roles')),
@@ -92,6 +97,11 @@ class AuthController extends Controller
 
         $tokens = $this->auth->issueTokens($user, $request, $data['device_name'] ?? 'web');
 
+        // Le client doit recevoir ses propres coordonnées. Sans cela, la requête
+        // n'ayant pas encore d'utilisateur authentifié, UserResource le traite
+        // comme un tiers et masque email et téléphone — y compris à l'inscription.
+        $request->setUserResolver(fn () => $user);
+
         return response()->json([
             'data' => [
                 'user' => new UserResource($user->load('roles')),
@@ -117,6 +127,11 @@ class AuthController extends Controller
         $user->currentAccessToken()?->delete();
 
         $tokens = $this->auth->issueTokens($user, $request, 'admin');
+
+        // Le client doit recevoir ses propres coordonnées. Sans cela, la requête
+        // n'ayant pas encore d'utilisateur authentifié, UserResource le traite
+        // comme un tiers et masque email et téléphone — y compris à l'inscription.
+        $request->setUserResolver(fn () => $user);
 
         return response()->json([
             'data' => [
@@ -167,6 +182,11 @@ class AuthController extends Controller
 
         $user = $this->auth->loginWithOtp($data['phone'], $data['code'], $request);
         $tokens = $this->auth->issueTokens($user, $request, 'web');
+
+        // Le client doit recevoir ses propres coordonnées. Sans cela, la requête
+        // n'ayant pas encore d'utilisateur authentifié, UserResource le traite
+        // comme un tiers et masque email et téléphone — y compris à l'inscription.
+        $request->setUserResolver(fn () => $user);
 
         return response()->json([
             'data' => [

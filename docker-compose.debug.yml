@@ -1,0 +1,29 @@
+# =============================================================================
+# Extension de diagnostic — NE FAIT PAS PARTIE DE LA PILE PAR DÉFAUT
+# =============================================================================
+#
+# Ajoute une interface web d'administration PostgreSQL (pgAdmin).
+# Volontairement séparée : le fichier principal ne doit jamais exiger de
+# variable supplémentaire pour démarrer.
+#
+#   export PGADMIN_PASSWORD='un-mot-de-passe-solide'
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml --profile debug up -d
+#
+# Puis : http://127.0.0.1:5050
+# Pour l'arrêter : docker compose ... --profile debug down
+#
+# Écoute sur 127.0.0.1 par défaut : jamais exposé à Internet sans TLS.
+# =============================================================================
+
+services:
+  postgres-admin:
+    image: dpage/pgadmin4:latest
+    profiles: [debug]
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@tombola-innossb.cd}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD est requis pour le profil debug}
+      PGADMIN_LISTEN_PORT: 5050
+    ports:
+      - '${PGADMIN_BIND:-127.0.0.1}:${PGADMIN_PORT:-5050}:5050'
+    networks: [tombola]

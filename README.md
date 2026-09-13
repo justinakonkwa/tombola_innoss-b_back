@@ -176,6 +176,34 @@ Détail complet du modèle de menaces : [`docs/SECURITY.md`](docs/SECURITY.md)
 
 ---
 
+## Ports
+
+Tout est configurable par variable d'environnement, sans modifier les fichiers.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `API_BIND` | `127.0.0.1` | Adresse d'écoute côté hôte. `127.0.0.1` = uniquement via un reverse proxy (recommandé) ; `0.0.0.0` = exposition directe |
+| `API_PORT` | `8000` | Port publié sur la machine hôte |
+| `API_CONTAINER_PORT` | `8000` | Port d'écoute interne au conteneur (le healthcheck s'y adapte) |
+
+Exemple : servir l'API sur le port 8080 et la faire écouter sur toutes les
+interfaces.
+
+```bash
+API_BIND=0.0.0.0 API_PORT=8080 docker compose up -d
+```
+
+PostgreSQL et Redis ne sont **jamais** publiés : ils restent sur le réseau
+interne. Pour inspecter la base, utilisez le profil de diagnostic :
+
+```bash
+export PGADMIN_PASSWORD='un-mot-de-passe-solide'
+docker compose -f docker-compose.yml -f docker-compose.debug.yml --profile debug up -d
+# → http://127.0.0.1:5050
+```
+
+---
+
 ## Tests et vérifications
 
 ```bash

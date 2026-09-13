@@ -336,6 +336,123 @@ qu'un second membre du personnel détient le rôle `finance` ou `super_admin`.
 Tant qu'un seul approbateur existe, l'auto-approbation reste possible afin de ne
 pas bloquer une équipe réduite.
 
+## 9 ter. Déployer sur Coolify
+
+Coolify choisit par défaut un **build pack automatique** (Railpack / Nixpacks)
+qui déduit le langage depuis les fichiers présents. Sur un backend Laravel, cette
+détection se trompe régulièrement.
+
+### 9 ter.1 Symptôme observé
+
+```
+railpack prepare ... → INFO No package manager inferred, using npm default
+Deployment failed: Command execution failed (exit code 1)
+```
+
+Railpack a vu un `package.json` (le squelette Laravel en embarque un pour Vite)
+et a tenté un build **Node** au lieu d'un build **PHP**. Résultat : échec.
+
+### 9 ter.2 Backend — réglages Coolify
+
+| Réglage | Valeur |
+|---|---|
+| **Build pack** | **`Dockerfile`** (et non Railpack / Nixpacks) |
+| Dockerfile location | `/Dockerfile` |
+| Port exposé | `8000` |
+| Health check path | `/api/v1/health` |
+| Domaine | `https://api.tombola-innossb.cd` |
+
+> Le `package.json` et le `vite.config.js` du squelette Laravel ont été **retirés
+> du dépôt** : cette application est une API pure, sans pipeline d'assets. La
+> détection automatique retombe donc sur PHP. Le build pack `Dockerfile` reste
+> néanmoins **obligatoire**, car l'image installe des extensions PHP que la
+> détection automatique ne prévoit pas — notamment `redis`, sans laquelle toute
+> route à session échoue en « Class "Redis" not found ».
+
+### 9 ter.3 Backend — variables d'environnement
+
+```
+APP_ENV=production
+APP_DEBUG=false
+APP_KEY=base64:...                      # php artisan key:generate --show
+APP_URL=https://api.tombola-innossb.cd
+FRONTEND_URL=https://tombola-innossb.cd
+ADMIN_URL=https://tombola-innossb.cd/admin
+
+DB_CONNECTION=pgsql
+DB_HOST=<hôte interne fourni par Coolify>
+DB_PORT=5432
+DB_DATABASE=tombola
+DB_USERNAME=tombola_app
+DB_PASSWORD=<mot de passe fort>
+
+CACHE_STORE=redis
+QUEUE_CONNECTION=redis
+SESSION_DRIVER=redis
+REDIS_HOST=<hôte interne fourni par Coolify>
+REDIS_PORT=6379
+
+REQUIRE_MFA_FOR_STAFF=true
+FUTAYE_BASE_URL=https://futaye.buania.com
+FUTAYE_CLIENT_ID=<code application>
+FUTAYE_TOKEN=<token HMAC — secret>
+
+NOTIFICATION_CHANNELS=email
+MAIL_MAILER=smtp                       # ou `log` pour une démonstration
+MAIL_HOST=...
+MAIL_PORT=587
+MAIL_USERNAME=...
+MAIL_PASSWORD=...
+MAIL_FROM_ADDRESS=no-reply@tombola-innossb.cd
+```
+
+Deux points importants :
+
+- **Les migrations s'exécutent automatiquement** au démarrage du conteneur
+  (`php artisan migrate --force` dans la commande de démarrage).
+- **Le seeding reste manuel.** Après le premier déploiement :
+  ```
+  php artisan db:seed --force
+  ```
+  Hors environnement local, le seeder exige `TOMBOLA_ADMIN_PASSWORD` ou génère
+  un mot de passe aléatoire affiché **une seule fois** — notez-le.
+- La commande de démarrage exécute `config:cache` : **modifier une variable
+  d'environnement impose de redémarrer le conteneur**, pas seulement de la
+  changer dans l'interface.
+
+### 9 ter.4 Frontend — réglages Coolify
+
+| Réglage | Valeur |
+|---|---|
+| **Build pack** | `Dockerfile` |
+| Dockerfile location | `/Dockerfile` |
+| Port exposé | `3000` |
+| Domaine | `https://tombola-innossb.cd` |
+
+⚠️ **Les variables `NEXT_PUBLIC_*` sont compilées dans le bundle.** Dans Coolify,
+elles doivent être déclarées comme **arguments de build**, et non comme simples
+variables d'exécution :
+
+```
+NEXT_PUBLIC_API_URL=https://api.tombola-innossb.cd
+NEXT_PUBLIC_SITE_URL=https://tombola-innossb.cd
+```
+
+Toute modification de ces deux valeurs impose un **redéploiement avec
+reconstruction** de l'image.
+
+### 9 ter.5 Ordre de déploiement
+
+1. créer la base PostgreSQL dans Coolify, puis relever son hôte interne ;
+2. créer la base et le rôle applicatif (voir §3) ;
+3. déployer le **backend** (build pack Dockerfile), renseigner les variables,
+   puis lancer `db:seed` une fois ;
+4. vérifier `https://api.…/api/v1/health` ;
+5. déployer le **frontend** avec les bons arguments de build ;
+6. vérifier `https://tombola-…` puis l'inscription et un achat de test.
+
+---
+
 ## 10. Tâches planifiées
 
 Le service `scheduler` exécute `php artisan schedule:run` chaque minute. Il doit :

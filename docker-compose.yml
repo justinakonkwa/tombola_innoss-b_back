@@ -1,15 +1,13 @@
-version: '3.9'
-
 # =============================================================================
 # Tombola Innoss'B — API + base de données + files d'attente
 # =============================================================================
 # Pile backend autonome : le frontend est déployé séparément (voir le dépôt
 # `tombola_innoss-b_front`) et pointe vers `APP_URL`.
 #
-#   cp .env.example .env   # renseigner les secrets, puis :
+#   cp .env.example .env   # renseigner les secrets et, si besoin, les ports
 #   docker compose up -d --build
 #
-# PostgreSQL et Redis ne sont jamais exposés : ils restent sur le réseau interne.
+# PostgreSQL et Redis ne sont JAMAIS exposés : ils restent sur le réseau interne.
 # =============================================================================
 
 services:
@@ -47,6 +45,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: tombola-api:latest
     restart: unless-stopped
     depends_on:
       postgres:
@@ -58,6 +57,9 @@ services:
       APP_DEBUG: 'false'
       APP_URL: ${APP_URL:?APP_URL est requis}
       APP_KEY: ${APP_KEY:?APP_KEY est requis}
+      # Port d'écoute INTERNE au conteneur. Le Dockerfile et son healthcheck
+      # s'adaptent à cette valeur ; le mapping ci-dessous s'y aligne aussi.
+      PORT: ${API_CONTAINER_PORT:-8000}
       DB_CONNECTION: pgsql
       DB_HOST: postgres
       DB_PORT: 5432
@@ -76,7 +78,7 @@ services:
       FUTAYE_BASE_URL: ${FUTAYE_BASE_URL:-https://futaye.buania.com}
       FUTAYE_CLIENT_ID: ${FUTAYE_CLIENT_ID:?FUTAYE_CLIENT_ID est requis}
       FUTAYE_TOKEN: ${FUTAYE_TOKEN:?FUTAYE_TOKEN est requis}
-      FUTAYE_RETURN_URL: ${FUTAYE_RETURN_URL}
+      FUTAYE_RETURN_URL: ${FUTAYE_RETURN_URL:-}
       NOTIFICATION_CHANNELS: ${NOTIFICATION_CHANNELS:-email}
       MAIL_MAILER: ${MAIL_MAILER:-smtp}
       MAIL_HOST: ${MAIL_HOST}
@@ -85,25 +87,38 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD}
       MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS}
     ports:
-      - '127.0.0.1:${API_PORT:-8000}:8000'
+      # [adresse d'écoute hôte] : [port hôte] : [port conteneur]
+      #
+      #   API_BIND=127.0.0.1 (défaut) → l'API n'est joignable que depuis la
+      #     machine, donc uniquement à travers un reverse proxy (nginx, Caddy,
+      #     Cloudflare Tunnel). C'est le réglage recommandé en production.
+      #   API_BIND=0.0.0.0 → expose l'API directement. À n'utiliser que si un
+      #     pare-feu et TLS sont en place devant.
+      - '${API_BIND:-127.0.0.1}:${API_PORT:-8000}:${API_CONTAINER_PORT:-8000}'
     networks: [tombola]
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile
+    image: tombola-api:latest
     restart: unless-stopped
     depends_on:
       api:
         condition: service_started
     command: ['php', 'artisan', 'queue:work', '--sleep=3', '--tries=3', '--max-time=3600']
     environment: *api-env
+    # Ce conteneur ne sert pas de HTTP : le healthcheck de l'image (qui appelle
+    # /api/v1/health) le déclarerait unhealthy en permanence.
+    healthcheck:
+      disable: true
     networks: [tombola]
 
   scheduler:
     build:
       context: .
       dockerfile: Dockerfile
+    image: tombola-api:latest
     restart: unless-stopped
     depends_on:
       api:
@@ -112,6 +127,8 @@ services:
     # chaîne d'audit (cahier des charges §35, §36).
     command: ['sh', '-c', 'while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done']
     environment: *api-env
+    healthcheck:
+      disable: true
     networks: [tombola]
 
 volumes:

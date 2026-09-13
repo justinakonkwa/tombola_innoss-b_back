@@ -64,9 +64,11 @@ class AuthTest extends TestCase
         $response->assertJsonMissing(['password' => $user->password]);
         $response->assertJsonPath('data.user.first_name', 'Jean');
 
-        // Le visiteur n'est pas encore authentifié : l'e-mail n'est pas exposé
-        // (minimisation des données, cf. UserResource).
-        $this->assertNull($response->json('data.user.email'));
+        // L'intéressé reçoit ses propres coordonnées : la minimisation vise les
+        // TIERS, pas le propriétaire du compte. Sans cela, le client devrait
+        // appeler /me juste après l'inscription pour connaître son profil.
+        $this->assertSame('jean.mbala@example.com', $response->json('data.user.email'));
+        $this->assertNotNull($response->json('data.user.phone'));
 
         // Le rôle participant est renvoyé dans la réponse d'inscription.
         $this->assertContains('participant', (array) $response->json('data.user.roles'));

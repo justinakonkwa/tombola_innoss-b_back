@@ -12,16 +12,6 @@
 #
 # Usage : ./scripts/mfa-e2e.sh [http://localhost:8000]
 # =============================================================================
-# ---------------------------------------------------------------------------
-# AVERTISSEMENT — identifiants de DÉVELOPPEMENT
-# ---------------------------------------------------------------------------
-# Le couple admin@tombola-innossb.cd / Tombola++2026* n'existe QUE dans un
-# environnement local. Le seeder refuse ce mot de passe hors de `local` et
-# `testing` : en production il exige TOMBOLA_ADMIN_PASSWORD ou en génère un
-# aléatoirement. Ces scripts ne doivent jamais être pointés vers une instance
-# de production.
-# ---------------------------------------------------------------------------
-
 set -euo pipefail
 
 API="${1:-http://localhost:8000}"
