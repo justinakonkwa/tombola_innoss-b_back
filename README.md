@@ -219,6 +219,16 @@ idempotence du double webhook, montant recalculé côté serveur, immuabilité d
 ticket verrouillé, tirage figé et reproductible, cloisonnement RBAC/MFA, et
 séparation des tâches sur les remboursements.
 
+Démarrage de la pile complète en une commande :
+
+```bash
+./scripts/dev.sh              # API + worker + planificateur (+ frontend si présent)
+./scripts/dev.sh --prod       # frontend servi depuis le build de production
+./scripts/dev.sh --api-only   # API, worker et planificateur uniquement
+```
+
+Ctrl+C arrête proprement tous les processus.
+
 Scripts de vérification de bout en bout (API démarrée) :
 
 ```bash
